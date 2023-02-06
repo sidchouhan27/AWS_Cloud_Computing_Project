@@ -1,0 +1,167 @@
+index.html :
+
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/html" xmlns="http://www.w3.org/1999/html">
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+</head>
+<body bgcolor=”#CCFF00">
+    <div align="center">
+        <div><h1><font size="+3">Login Page</font></h1></div>
+        <div>
+            <form action="{{url_for('login')}}" method="POST">
+                <div>{{ message }}</div> <br><br>
+                <label><font size="+1">User Name : </font></label><input id="username" name="username" type="text" placeholder="User Name" autocomplete="off"/> <br><br>
+                <label><font size="+1">Password : </font></label><input id="password" name="password" type="password" placeholder="Password" autocomplete="off"/> <br><br>
+                <button id="submit" name="submit">Sign in</button>
+            </form>
+        </div>
+        <p>Don't have an account? Please click <a href="{{url_for('registration')}}">here</a></p>
+    </div>
+</body>
+</html>
+
+
+registration.html :
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Register</title>
+</head>
+<body bgcolor=”#CCFF00">
+<div align="center">
+        <div><h1><font size="+3">Registration Page</font></h1></div>
+    <div>
+        <form action="{{url_for('registration')}}" method="POST" enctype="multipart/form-data">
+            <div>{{ message }}</div><br><br>
+            <label>User Name : </label><input id="username" name="username" type="text" placeholder="User Name" autocomplete="off"/> <br><br>
+            <label>Password : </label><input id="password" name="password" type="password" placeholder="Password" autocomplete="off"/> <br><br>
+            <label>First Name : </label><input id="firstname" name="firstname" type="text" placeholder="First Name" autocomplete="off"/> <br><br>
+            <label>Last Name : </label><input id="lastname" name="lastname" type="text" placeholder="Last Name" autocomplete="off"/> <br><br>
+            <label>Email : </label><input id="email" name="email" type="text" placeholder="Email" autocomplete="off"/> <br><br>
+            <label>Upload File : </label><input type="file" id="textfile" name="textfile"><br><br>
+            <button id="submit" name="submit">Register</button>
+        </form>
+    </div>
+    <p>Already have an account? Please click <a href="{{url_for('login')}}">here to login</a></p>
+</div>
+</body>
+</html>
+
+
+makedb.py :
+
+import sqlite3
+
+conn = sqlite3.connect('users.db')
+cur = conn.cursor()
+cur.execute("""DROP TABLE IF EXISTS users""")
+cur.execute("""CREATE TABLE users (Username text,Password text,firstname text, lastname text, email text, count integer)""")
+
+conn.commit()
+conn.close()
+
+
+flaskapp.py :
+
+import sqlite3
+
+from flask import Flask, request, g, render_template, send_file
+
+DATABASE = '/var/www/html/flaskapp/uders.db'
+
+app = Flask(__name__)
+app.config.from_object(__name__)
+
+def connect_to_database():
+    return sqlite3.connect(app.config['DATABASE'])
+
+def get_db():
+    db = getattr(g, 'db', None)
+    if db is None:
+        db = g.db = connect_to_database()
+    return db
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, 'db', None)
+    if db is not None:
+        db.close()
+
+def execute_query(query, args=()):
+    cur = get_db().execute(query, args)
+    rows = cur.fetchall()
+    cur.close()
+    return rows
+
+def commit():
+    get_db().commit()
+
+@app.route("/")
+def hello():
+    return render_template('index.html')
+
+@app.route('/login', methods =['POST', 'GET'])
+def login():
+    message = ''
+    if request.method == 'POST' and str(request.form['username']) !="" and str(request.form['password']) != "":
+        username = str(request.form['username'])
+        password = str(request.form['password'])
+        result = execute_query("""SELECT firstname,lastname,email,count  FROM users WHERE Username  = (?) AND Password = (?)""", (username, password ))
+        if result:
+            for row in result:
+                return responsePage(row[0], row[1], row[2], row[3])
+        else:
+            message = 'Invalid Credentials !'
+    elif request.method == 'POST':
+        message = 'Please enter Credentials'
+    return render_template('index.html', message = message)
+
+@app.route('/registration', methods =['GET', 'POST'])
+def registration():
+    message = ''
+    if request.method == 'POST' and str(request.form['username']) !="" and str(request.form['password']) !="" and str(request.form['firstname']) !="" and str(request.form['lastname']) !="" and str(request.form['email']) !="":
+        username = str(request.form['username'])
+        password = str(request.form['password'])
+        firstname = str(request.form['firstname'])
+        lastname = str(request.form['lastname'])
+        email = str(request.form['email'])
+        uploaded_file = request.files['textfile']
+        if not uploaded_file:
+            filename = null
+            word_count = null
+        else :
+            filename = uploaded_file.filename
+            word_count = getNumberOfWords(uploaded_file)
+        result = execute_query("""SELECT *  FROM users WHERE Username  = (?)""", (username, ))
+        if result:
+            message = 'User has already registered!'
+        else:
+            result1 = execute_query("""INSERT INTO users (username, password, firstname, lastname, email, count) values (?, ?, ?, ?, ?, ? )""", (username, password, firstname, lastname, email, word_count, ))
+            commit()
+            result2 = execute_query("""SELECT firstname,lastname,email,count  FROM users WHERE Username  = (?) AND Password = (?)""", (username, password ))
+            if result2:
+                for row in result2:
+                    return responsePage(row[0], row[1], row[2], row[3])
+    elif request.method == 'POST':
+        message = 'Some of the fields are missing!'
+    return render_template('registration.html', message = message)
+
+@app.route("/download")
+def download():
+    path = "Limerick.txt"
+    return send_file(path, as_attachment=True)
+
+def getNumberOfWords(file):
+    data = file.read()
+    words = data.split()
+    return str(len(words))
+
+def responsePage(firstname, lastname, email, count):
+    return """ First Name :  """ + str(firstname) + """ <br> Last Name : """ + str(lastname) + """ <br> Email : """ + str(email) + """ <br> Word Count : """ + str(count) + """ <br><br> <a href="/download" >Download</a> """
+
+if __name__ == '__main__':
+  app.run()
